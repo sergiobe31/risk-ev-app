@@ -1,0 +1,68 @@
+# Registro de brókers para las fichas de símbolo (lo lee poc_web/api/symbols.py).
+#
+# Un bróker agrupa las fichas de símbolo (valor del punto, pasos de lote, comisión, spread típico, fichero
+# OHLC M1) y fija dos cosas más: el reloj del servidor de las horas de un .sqx y la carpeta de los OHLC.
+# Las fichas OFICIALES no se escriben aquí: se LEEN, sin modificarlos, de los ficheros de especificaciones
+# de cada bróker (clave `source`). Las fichas y los brókers del usuario viven aparte, en
+# config/symbols.user.yaml (no versionado).
+#
+# Claves de cada bróker:
+#   display_name, company  nombre para mostrar y compañía.
+#   currency               divisa de la cuenta; solo USD en la v1.
+#   asset_class            cfd | futures. En futuros el paso y el lote mínimo son 1 (fijos).
+#   clock                  reloj de las horas de orders.bin del .sqx:
+#                            ny_plus_7  hora del servidor = Nueva York + 7 h (cierre de NY);
+#                                       la usan casi todos los brókers de MT5.
+#                            ny_wall    reloj de pared de Nueva York (datos de futuros).
+#   ohlc_dir               carpeta (relativa a la raíz del repo) de los OHLC M1 de los símbolos; opcional.
+#   source.adapter         cómo se leen las fichas oficiales:
+#                            costs_yaml  YAML de costes con `symbols:` y `sqx_policy:`;
+#                            broker_axi  config/broker_axi.yaml; `sqx_suffix` se añade al `ticker_cascade`
+#                                        para dar el símbolo SQX.
+#   source.file            fichero de especificaciones. Debe figurar en `config_files` de
+#                          scripts/export_shareable/manifest.yaml (lo vigila un test del export).
+#
+# `profiles`: perfil OFICIAL raíz -> bróker. Los perfiles del usuario heredan el bróker de su perfil raíz
+# (`based_on`). `null` = el perfil aún no admite patas .sqx.
+# `lenses`: lente -> bróker obligatorio de sus patas .sqx.
+schema_version: 1
+
+brokers:
+  ftmo_cfd:
+    display_name: "FTMO (CFD, MT5)"
+    company: FTMO
+    currency: USD
+    asset_class: cfd
+    clock: ny_plus_7
+    ohlc_dir: risk_app/inputs/ohlc
+    source: {adapter: costs_yaml, file: config/ftmo_cfd_costs.yaml}
+  ftmo_futures:
+    display_name: "FTMO Futures (micros CME)"
+    company: FTMO
+    currency: USD
+    asset_class: futures
+    clock: ny_wall
+    source: {adapter: costs_yaml, file: config/ftmo_futures_costs.yaml}
+  axi:
+    display_name: "AXI Select (MT5)"
+    company: Axi
+    currency: USD
+    asset_class: cfd
+    clock: ny_plus_7
+    ohlc_dir: risk_app/inputs/ohlc_axi
+    source: {adapter: broker_axi, file: config/broker_axi.yaml, sqx_suffix: "_axi"}
+
+profiles:
+  ftmo_50k: ftmo_cfd
+  ftmo_50k_swing: ftmo_cfd
+  ftmo_100k: ftmo_cfd
+  ftmo_futures_growth_50k: ftmo_futures
+  ftmo_futures_growth_100k: ftmo_futures
+  ftmo_futures_growth_150k: ftmo_futures
+  ftmo_futures_pro_50k: ftmo_futures
+  ftmo_futures_pro_100k: ftmo_futures
+  ftmo_futures_pro_150k: ftmo_futures
+  apex_150k_intraday: null      # aún sin bróker para patas .sqx
+
+lenses:
+  axi: axi

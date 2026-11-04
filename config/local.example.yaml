@@ -1,0 +1,18 @@
+# Configuracion LOCAL de la app (opcional). Copia este fichero como `config/local.yaml`
+# (ese nombre esta en .gitignore: no se sube al repositorio) y edita las rutas.
+#
+# extra_input_roots: carpetas EXTRA donde la app busca tus exportaciones de SQX (ficheros .sqx y,
+# si los tienes, los CSV `orderstocsv`). Se suman a `risk_app/inputs/`. Cada ruta puede llevar `~`.
+# Si no existen, la app las ignora sin error. Con la lista vacia o sin este fichero, solo se usa
+# `risk_app/inputs/`.
+#
+# Alternativa sin fichero: la variable de entorno RISK_APP_EXTRA_ROOTS (manda sobre este fichero).
+# El separador entre rutas depende del sistema operativo:
+#   Mac / Linux : ":"   ->  export RISK_APP_EXTRA_ROOTS="<tu carpeta SQX 1>:<tu carpeta SQX 2>"
+#   Windows     : ";"   ->  $env:RISK_APP_EXTRA_ROOTS = "<tu carpeta SQX 1>;<tu carpeta SQX 2>"
+#
+# Con carpetas extra, `python run_app.py --smoke` sigue funcionando (solo avisa de que hay carpetas
+# extra); `--smoke --strict` (el modo del CI) exige una copia limpia, solo con la demo.
+extra_input_roots:
+  - "~/<tu carpeta SQX>"
+  # - "~/<otra carpeta SQX>"

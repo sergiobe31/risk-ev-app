@@ -1,0 +1,474 @@
+# Perfiles de prop firms para el simulador EV (risk_app, pagina Prop Firms).
+#
+# Enfoque EXTRACTIVO: el challenge es un juego de valor esperado —
+#   EV/intento = -fee + P(P1 ∧ P2) × E[payouts fondeada | P1 ∧ P2]
+#
+# VERIFICADO contra ftmo.com (Trading Objectives, FAQs, Scaling Plan) 2026-07-27:
+# - max_loss_pct: ESTATICO (inicial x (1 - pct)), breach sobre EQUITY (flotante
+#   incluido), en Challenge, Verification y fondeada. Conforme en el motor.
+# - max_daily_loss_pct: suelo = balance a 00:00 CE(S)T - pct% del balance
+#   INICIAL, recalculado cada medianoche; breach sobre equity. Conforme.
+# - min_trading_days: dias CE(S)T con >= 1 posicion ABIERTA; NO aplica en la
+#   fondeada. Conforme.
+# - profit target: sobre balance CERRADO (todas las posiciones cerradas).
+#   Conforme.
+#
+# APROXIMACIONES / NO MODELADO (conservador salvo indicacion):
+# - Payouts reales: "dia 14 o posterior al primer trade" y luego on-demand;
+#   el modelo usa ciclos fijos de payout_cycle_days (retrasa flujo de caja).
+# - Rollover (dejar el reward en cuenta para colchon, min $20) no modelado:
+#   el modelo asume retirada total y reset al tamano inicial.
+# - Scaling Plan (>=4 meses, >=10% neto total, >=2 payouts -> split 90% y
+#   +25% balance/4 meses, tope $2M) no modelado: split fijo del 80%.
+# - Fondeada STANDARD: restriccion de noticias (±2 min; SL/TP que salte en la
+#   ventana = breach) y cierre obligatorio antes del fin de semana / pausas
+#   >2h. NO modeladas -> el motor SOBREESTIMA la supervivencia de la
+#   fondeada. Cuentas Swing exentas (producto no modelado aqui).
+# - El 1-Step es OTRO producto (daily 3%, max loss trailing EOD, Best Day
+#   Rule 50%, split 90% fijo, fee NO reembolsable): no mezclar sus reglas.
+#
+# Convenciones:
+# - account_size en USD (moneda de la cuenta de la firm).
+# - fee en la moneda indicada por fee_ccy (default EUR, moneda real del
+#   trader; la conversion USD->EUR de los payouts se aplica en la UI via
+#   fx_eur_usd). Con fee_ccy: USD, resolve_fee_eur() la normaliza a EUR
+#   UNA vez en el setup antes de tocar el motor.
+# - funded.payout_cycle_days: dias calendario entre payouts (aprox.; ver
+#   arriba). Solo aplica a funded.model "cycle" (FTMO).
+# - funded.max_payout_cycles: cap de TRUNCADO de la simulacion (50 ~ 2 anos;
+#   se reporta alive_at_cap y la cota del sesgo), no es una regla de FTMO.
+
+firms:
+  ftmo_50k:
+    display_name: "FTMO Challenge 50k"
+    company: "FTMO"
+    account_size: 50000
+    fee: 345
+    profit_split_pct: 80        # escala a 90 con volumen; editable en UI
+    refund_fee_on_first_payout: true
+    phases:
+      - name: "Challenge"
+        profit_target_pct: 10
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+      - name: "Verification"
+        profit_target_pct: 5
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+    funded:
+      payout_cycle_days: 14
+      min_payout_profit_pct: 0
+      max_payout_cycles: 50
+
+  ftmo_50k_swing:
+    display_name: "FTMO Challenge 50k Swing"
+    company: "FTMO"
+    account_size: 50000
+    fee: 379                    # pagado en EUR (confirmado 2026-10-14)
+    fee_ccy: EUR
+    profit_split_pct: 80        # escala a 90 con volumen; editable en UI
+    refund_fee_on_first_payout: true
+    # Reglas identicas a la standard; el swing SOLO cambia: exento de
+    # restriccion de noticias y sin cierre obligatorio de fin de semana
+    # (justo las dos NO modeladas -> el motor es mas exacto para swing),
+    # y apalancamiento 1:30 (afecta a sizing/margen, no al motor EV).
+    phases:
+      - name: "Challenge"
+        profit_target_pct: 10
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+      - name: "Verification"
+        profit_target_pct: 5
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+    funded:
+      payout_cycle_days: 14
+      min_payout_profit_pct: 0
+      max_payout_cycles: 50
+
+  ftmo_100k:
+    display_name: "FTMO Challenge 100k"
+    company: "FTMO"
+    account_size: 100000
+    fee: 540
+    profit_split_pct: 80
+    refund_fee_on_first_payout: true
+    phases:
+      - name: "Challenge"
+        profit_target_pct: 10
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+      - name: "Verification"
+        profit_target_pct: 5
+        max_daily_loss_pct: 5
+        max_loss_pct: 10
+        min_trading_days: 4
+    funded:
+      payout_cycle_days: 14
+      min_payout_profit_pct: 0
+      max_payout_cycles: 50
+
+  # -------------------------------------------------------------------------
+  # Apex 150K Intraday Trail (4.0) — spec verificada sept-2026
+  # (docs/referencia/APEX_150K_Reglas_Motor_de_Riesgo-2.md; plan adjudicado Fase 1).
+  #
+  # Bloques nuevos respecto a FTMO (todos opcionales; defaults = FTMO):
+  # - ruleset_version: Apex rota reglas; re-verificar por ciclo.
+  # - fee_ccy: EUR (default) | USD. Con USD, resolve_fee_eur normaliza el fee
+  #   a EUR UNA vez en el setup (fx del request) — no por touchpoint.
+  # - activation: fee de activacion de la PA (solo en paths pass).
+  # - day_axis: "et_session" = sesiones CME 18:00->16:59 ET (Fase 0);
+  #   ausente = dia calendario (FTMO).
+  # - phases[].drawdown: trailing intradia unrealized (exige max_loss_pct:
+  #   null). phases[].max_daily_loss_pct / max_loss_pct ahora anulables
+  #   (0.0 queda PROHIBIDO por el loader). lifetime_days = reloj de dias
+  #   NATURALES; on_horizon_exhausted: "fail" = expirar cuesta el fee
+  #   (outcome "expired"); "exclude" = default FTMO.
+  # - phases[].max_contracts: cap de contratos simultaneos de la evaluacion
+  #   (Fase 5; diagnostico contract_cap_diagnostic en micro-equivalentes,
+  #   1 mini = 10 micros). El cap de la PA sale de funded.scaling_tiers.
+  # - funded.model: "cycle" (default FTMO) | "ladder" (exige bloque payouts).
+  # - funded.drawdown con lock_at_balance/frozen_floor: suelo congelado.
+  # - funded.daily_loss: pausa no fatal por sesion, DLL por tier,
+  #   post_hit: clamp (PnL sesion := min(observado, -DLL)).
+  # - funded.scaling_tiers: caps de contratos por tramo de beneficio.
+  # - funded.payouts: escalera de retiros; residual_floor = safety net bajo
+  #   el que nunca se retira; min_balance_first >= residual + min_payout.
+  # - funded.inactivity: ventana rolling de dias naturales con minimo de
+  #   dias activos con beneficio >= min_profit_usd.
+  # -------------------------------------------------------------------------
+  apex_150k_intraday:
+    display_name: "Apex 150K Intraday Trail (4.0)"
+    company: "Apex"
+    ruleset_version: "apex_4.0_verified_2026-09"
+    account_size: 150000
+    fee: 49.80
+    fee_ccy: USD                    # el loader normaliza a EUR UNA vez (fx del request);
+    profit_split_pct: 100           #   internamente cfg.fee queda en EUR → ev_vector_all,
+    refund_fee_on_first_payout: false   #   refund, stop_on_insolvency y FTMO intactos
+    activation: {fee_usd: 59, deadline_days: 7}   # convertida igual; solo en paths pass
+    day_axis: et_session            # Fase 0; FTMO: default actual
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null    # null = sin DLL (0 queda PROHIBIDO por el loader)
+        max_loss_pct: null          # barrera estática desactivada; manda el drawdown
+        drawdown: {type: trailing_intraday_unrealized, amount_usd: 4000}
+        lifetime_days: 30           # días NATURALES (reloj = durations+gaps wall-clock)
+        on_horizon_exhausted: fail  # expirar = fee perdido; outcome nuevo "expired"
+        max_contracts: {max_mini: 12, max_micro: 120}   # cap de contratos simultáneos (Fase 5; suma cross-instrumento en micro-eq)
+    funded:
+      model: ladder                 # FTMO: "cycle" (default)
+      drawdown: {type: trailing_intraday_unrealized, amount_usd: 4000,
+                 lock_at_balance: 154100, frozen_floor: 150100}
+      daily_loss: {type: pause_not_fatal, reset: session,
+                   by_tier_usd: [2500, 2500, 2500, 3000, 4000],
+                   post_hit: clamp} # PnL sesión := min(observado, −DLL); ver Fase 4
+      scaling_tiers:
+        - {level: 1, profit_range: [0, 1999],    max_mini: 4,  max_micro: 40}
+        - {level: 2, profit_range: [2000, 2999], max_mini: 5,  max_micro: 50}
+        - {level: 3, profit_range: [3000, 4999], max_mini: 7,  max_micro: 70}
+        - {level: 4, profit_range: [5000, 9999], max_mini: 10, max_micro: 100}
+        - {level: 5, profit_range: [10000, null], max_mini: 10, max_micro: 100}
+      payouts:
+        qualifying_day_min_usd: 300
+        days_per_payout: 5
+        ladder_usd: [2500, 3000, 3000, 4000, 4000, 5000]
+        min_payout_usd: 500
+        min_balance_first: 154600
+        residual_floor: 154100
+        max_payouts: 6
+        consistency: {max_best_day_share: 0.50, strict: true, window: since_last_payout}
+      inactivity: {window_days: 30, min_days: 2, min_profit_usd: 50}
+      max_payout_cycles: 50         # cap de TRUNCADO de simulación (no regla Apex)
+
+  # -------------------------------------------------------------------------
+  # FTMO Futures (Pro/Growth) — ruleset_version: ftmo_futures_verified_2026-09-29
+  # (skill propfirm-sim: ruleset verificado en ftmo.com 2026-09-29 + blog + FAQ).
+  #
+  # Mecánicas nuevas respecto a los perfiles anteriores:
+  # - day_axis_cut_hhmm "16:10": día-regla 18:00 ET → 16:10 ET del día siguiente
+  #   (el corte es exclusivo por arriba: el ts 16:10 ya etiqueta al día N+1;
+  #   la última barra M1 del día-regla es la 16:09). Apex sigue en "18:00".
+  # - fee: 0 + bloque subscription: suscripción mensual cancelada al pasar;
+  #   breach de eval → cuenta nueva GRATIS en la siguiente fecha de facturación;
+  #   reset de pago opcional reinicia sin esperar (no altera el ciclo de
+  #   facturación, anclado a t=0). El fee-único por intento de FTMO CFD/Apex
+  #   NO aplica: el coste de un breach es TIEMPO (mensualidades), no un fee nuevo.
+  # - drawdown eod_trailing: umbral recalculado al INICIO del día desde
+  #   max(cierres de balance anteriores, inicial) − amount; breach sobre EQUITY
+  #   intradía ("at any point", balance + flotante − comisiones). lock_at_balance
+  #   es el CAP del umbral (= inicial → lock permanente).
+  # - daily_loss_usd (eval Pro, hard fatal) / funded.daily_loss (Pro hard /
+  #   Growth soft = cierra todo y suspende el día, cuenta viva).
+  # - consistency (solo eval, puerta de pase NUNCA de breach): "Best Day 40%
+  #   or less" = inclusiva (strict: false); el pase se retrasa hasta cumplirla.
+  # - payouts_futures: qualifying days sobre P&L cerrado EOD; retirable =
+  #   withdraw_share × profit sobre el INICIAL; regla min-new-profit (≥50% de lo
+  #   solicitado = profit nuevo del ciclo); request_cap por request; ratio 90/10
+  #   sobre lo solicitado (profit_split_pct).
+  #
+  # Caveats ligados a ruleset_version (plan v2):
+  # - C4: "Beta phase" solo consta en el blog de lanzamiento (NO en la página
+  #   de reglas); FTMO promete no cambiar reglas retroactivamente en cuentas
+  #   activas. Pro "Withdraw 100% of your profit" (landing) = FRACCIÓN
+  #   RETIRABLE del profit (el ratio 90/10 aplica sobre lo solicitado,
+  #   adjudicado 2026-09-29). Si el "100%" del blog fuera promoción futura de
+  #   RATIO, re-verificar.
+  # - C1: campaign_cap_days (183) / funded_cap_days (365) / max_payout_cycles
+  #   son horizontes de TRUNCADO del modelo (decisión de diseño 2026-09-29), NO
+  #   reglas FTMO — se reportan p_truncated / alive_at_cap.
+  # - C2: el breach de equity usa rel_low GROSS de comisiones → chequeo
+  #   levemente optimista (ligado a ruleset_version, mismo caveat que Apex).
+  # - funded.scaling_tiers (escalado de contratos por profit EOD): tablas
+  #   completas NO verificadas (pendiente de verificar) → diagnóstico sin
+  #   veto; el cap de eval queda en phases[].max_contracts.
+  # -------------------------------------------------------------------------
+  ftmo_futures_growth_50k:
+    display_name: "FTMO Futures Growth 50K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 50000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 119, reset_fee_usd: 109,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null    # Growth: sin DLL en evaluación
+        max_loss_pct: null
+        drawdown: {type: eod_trailing, amount_usd: 2000,
+                   breach_on: equity, lock_at_balance: 50000}
+        consistency: {max_best_day_share: 0.40, strict: false}
+        max_contracts: {max_mini: 5, max_micro: 50}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 2000,
+                 breach_on: equity, lock_at_balance: 50000}
+      daily_loss: {type: pause_not_fatal, by_tier_usd: [1000], post_hit: clamp}
+      payouts_futures:
+        qualifying_day_min_usd: 150
+        days_per_payout: 4
+        withdraw_share: 0.50
+        request_cap_usd: 2500
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy          # default; el batch corre ambas
+        buffer_usd: 2000                   # default = amount del Max DD
+      max_payout_cycles: 50                # cap de TRUNCADO (no regla FTMO)
+
+  ftmo_futures_growth_100k:
+    display_name: "FTMO Futures Growth 100K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 100000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 169, reset_fee_usd: 159,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null
+        max_loss_pct: null
+        drawdown: {type: eod_trailing, amount_usd: 3500,
+                   breach_on: equity, lock_at_balance: 100000}
+        consistency: {max_best_day_share: 0.40, strict: false}
+        max_contracts: {max_mini: 10, max_micro: 100}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 3500,
+                 breach_on: equity, lock_at_balance: 100000}
+      daily_loss: {type: pause_not_fatal, by_tier_usd: [2000], post_hit: clamp}
+      payouts_futures:
+        qualifying_day_min_usd: 250
+        days_per_payout: 4
+        withdraw_share: 0.50
+        request_cap_usd: 3000
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy
+        buffer_usd: 3500
+      max_payout_cycles: 50
+
+  ftmo_futures_growth_150k:
+    display_name: "FTMO Futures Growth 150K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 150000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 229, reset_fee_usd: 219,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null
+        max_loss_pct: null
+        drawdown: {type: eod_trailing, amount_usd: 5000,
+                   breach_on: equity, lock_at_balance: 150000}
+        consistency: {max_best_day_share: 0.40, strict: false}
+        max_contracts: {max_mini: 15, max_micro: 150}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 5000,
+                 breach_on: equity, lock_at_balance: 150000}
+      daily_loss: {type: pause_not_fatal, by_tier_usd: [3000], post_hit: clamp}
+      payouts_futures:
+        qualifying_day_min_usd: 300
+        days_per_payout: 4
+        withdraw_share: 0.50
+        request_cap_usd: 4000
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy
+        buffer_usd: 5000
+      max_payout_cycles: 50
+
+  ftmo_futures_pro_50k:
+    display_name: "FTMO Futures Pro 50K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 50000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 139, reset_fee_usd: 129,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null    # Pro: DLL en USD hard (daily_loss_usd)
+        max_loss_pct: null
+        daily_loss_usd: 1000        # hard fatal: la cuenta muere al primer toque
+        drawdown: {type: eod_trailing, amount_usd: 3000,
+                   breach_on: equity, lock_at_balance: 50000}
+        consistency: {max_best_day_share: 0.50, strict: false}
+        max_contracts: {max_mini: 5, max_micro: 50}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 3000,
+                 breach_on: equity, lock_at_balance: 50000}
+      daily_loss: {type: hard_fatal, by_tier_usd: [1000]}
+      payouts_futures:
+        qualifying_day_min_usd: 200
+        days_per_payout: 5
+        withdraw_share: 1.00        # fracción retirable del profit (ver C4 arriba)
+        request_cap_usd: 5000
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy
+        buffer_usd: 3000
+      max_payout_cycles: 50
+
+  ftmo_futures_pro_100k:
+    display_name: "FTMO Futures Pro 100K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 100000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 199, reset_fee_usd: 189,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null
+        max_loss_pct: null
+        daily_loss_usd: 1500
+        drawdown: {type: eod_trailing, amount_usd: 4500,
+                   breach_on: equity, lock_at_balance: 100000}
+        consistency: {max_best_day_share: 0.50, strict: false}
+        max_contracts: {max_mini: 10, max_micro: 100}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 4500,
+                 breach_on: equity, lock_at_balance: 100000}
+      daily_loss: {type: hard_fatal, by_tier_usd: [1500]}
+      payouts_futures:
+        qualifying_day_min_usd: 300
+        days_per_payout: 5
+        withdraw_share: 1.00
+        request_cap_usd: 6000
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy
+        buffer_usd: 4500
+      max_payout_cycles: 50
+
+  ftmo_futures_pro_150k:
+    display_name: "FTMO Futures Pro 150K"
+    company: "FTMO"
+    ruleset_version: ftmo_futures_verified_2026-09-29
+    account_size: 150000
+    fee: 0
+    fee_ccy: USD
+    profit_split_pct: 90
+    refund_fee_on_first_payout: false
+    day_axis: et_session
+    day_axis_cut_hhmm: "16:10"
+    subscription: {monthly_fee_usd: 269, reset_fee_usd: 259,
+                   billing_period_days: 30, campaign_cap_days: 183,
+                   funded_cap_days: 365, funded_start_delay_days: 3}
+    phases:
+      - name: "Evaluation"
+        profit_target_pct: 6.0
+        min_trading_days: 0
+        max_daily_loss_pct: null
+        max_loss_pct: null
+        daily_loss_usd: 2000
+        drawdown: {type: eod_trailing, amount_usd: 6000,
+                   breach_on: equity, lock_at_balance: 150000}
+        consistency: {max_best_day_share: 0.50, strict: false}
+        max_contracts: {max_mini: 15, max_micro: 150}
+    funded:
+      model: futures
+      drawdown: {type: eod_trailing, amount_usd: 6000,
+                 breach_on: equity, lock_at_balance: 150000}
+      daily_loss: {type: hard_fatal, by_tier_usd: [2000]}
+      payouts_futures:
+        qualifying_day_min_usd: 500
+        days_per_payout: 5
+        withdraw_share: 1.00
+        request_cap_usd: 8000
+        min_new_profit_frac: 0.50
+        min_payout_usd: 20
+        withdrawal_policy: greedy
+        buffer_usd: 6000
+      max_payout_cycles: 50

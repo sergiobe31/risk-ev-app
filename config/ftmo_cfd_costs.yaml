@@ -1,0 +1,77 @@
+# Costes y allowlist de las patas .sqx de CFD FTMO (cuenta Swing 50k) para el motor
+# de riesgo (sqx/sqx_trades.py + poc_web): misma estructura que ftmo_futures_costs.yaml.
+#
+# Fuente: export MT5 del script Update_SQX_Instruments_information desde la cuenta del
+# challenge (FTMO-Server2, 2026-10-12; copia en asset_data/ftmo_sessions/server2_20261012/)
+# + comisiones oficiales FTMO (forex $2,50/lote/lado desde 2025-09-29 → $5 ida y vuelta).
+# Instrumentos SQX: EURUSD_cfd_ftmo, GBPUSD_cfd_ftmo, AUDUSD_cfd_ftmo, XAUUSD_cfd_ftmo y
+# US100_cfd_ftmo (perfil [[FTMO]]); datos Dukascopy M1 descargados con ese perfil: símbolos
+# EURUSD_ftmo, GBPUSD_ftmo, AUDUSD_ftmo, XAUUSD_ftmo(2) y USATECHIDXUSD_ftmo(2), en hora del
+# servidor FTMO (EETUS: UTC+2/+3, cierre de NY). Oro y US100 añadidos el 2026-10-14.
+#
+# Diferencias con futuros (las aplica sqx_trades cuando asset_class == "cfd"):
+# - Lotes fraccionarios: lot_step y min_lot por símbolo (0,01).
+# - El PnL neto del .sqx incluye el SWAP de las noches: la comisión se estima con los
+#   trades que no cruzan el rollover y el resto del coste implícito es swap.
+# - tick_size = tamaño del pip del instrumento SQX (tickSize), tick_value_usd = USD por
+#   pip y lote: tick_value_usd / tick_size = pointValue del .sqx (100.000 en FX, 100 en oro,
+#   1 en US100).
+# - Oro: comisión proporcional (commission_pct, % del nocional de apertura ida y vuelta, la
+#   PercentageBased de SQX) en vez de total_round_trip. 0,0014% = 0,0007%/lado de FTMO en
+#   metales: 5,84 $/lote a 4.172 $ (la SizeBased del instrumento importado), 2,52 $ a 1.800 $.
+
+asset_class: cfd
+
+symbols:
+  EURUSD:
+    sqx_symbol: "EURUSD_ftmo"
+    ohlc_m1: "EURUSD_ftmo.csv"   # M1 bid, hora del servidor, en risk_app/inputs/ohlc/ (flotante por minuto)
+    tick_size: 0.0001
+    tick_value_usd: 10.0
+    total_round_trip: 5.0     # USD por lote ida y vuelta (SizeBased 5,0 en SQX)
+    lot_step: 0.01
+    min_lot: 0.01
+  GBPUSD:
+    sqx_symbol: "GBPUSD_ftmo"
+    tick_size: 0.0001
+    tick_value_usd: 10.0
+    total_round_trip: 5.0
+    lot_step: 0.01
+    min_lot: 0.01
+  AUDUSD:
+    sqx_symbol: "AUDUSD_ftmo"
+    tick_size: 0.0001
+    tick_value_usd: 10.0
+    total_round_trip: 5.0
+    lot_step: 0.01
+    min_lot: 0.01
+  XAUUSD:
+    sqx_symbol: "XAUUSD_ftmo(2)"
+    ohlc_m1: "XAUUSD_ftmo.csv"
+    tick_size: 0.01
+    tick_value_usd: 1.0         # pointValue 100 (100 oz por lote)
+    commission_pct: 0.0014      # % del nocional de apertura, ida y vuelta (PercentageBased)
+    lot_step: 0.01
+    min_lot: 0.01
+  US100:
+    sqx_symbol: "USATECHIDXUSD_ftmo(2)"
+    ohlc_m1: "USATECHIDXUSD_ftmo.csv"
+    tick_size: 1.0
+    tick_value_usd: 1.0         # pointValue 1 (1 $ por punto y lote; US100.cash)
+    total_round_trip: 0.0       # FTMO no cobra comisión en índices
+    lot_step: 0.01
+    min_lot: 0.01
+
+# Allowlist (claves = símbolo de datos SQX). Spread típico en pips del instrumento SQX
+# (el mayor de las fotos con liquidez del 27-jul y del 12-oct de 2026).
+sqx_policy:
+  "EURUSD_ftmo":
+    typical_spread_points: 0.3
+  "GBPUSD_ftmo":
+    typical_spread_points: 0.3
+  "AUDUSD_ftmo":
+    typical_spread_points: 0.4
+  "XAUUSD_ftmo(2)":
+    typical_spread_points: 45     # 0,45 $ (default del instrumento; export del 12-oct: 41)
+  "USATECHIDXUSD_ftmo(2)":
+    typical_spread_points: 1.55   # puntos del índice (default del instrumento; export: 1,45)

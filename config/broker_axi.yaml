@@ -1,0 +1,355 @@
+# Specs por simbolo de AXI Select (cuenta demo MT5, tier Pro).
+#
+# Capturas obtenidas de la pantalla de Especificacion de cada simbolo en MT5
+# demo AXI Select. Spreads de BTC/ETH derivados de stats 2024-2026 sobre
+# datos historicos descargados (mediana / P95).
+#
+# Reconciliado 2026-06-20 contra el export del script MT5 de SQX
+# (Update_SQX_Instruments_information, servidor Axi-US50-Demo) via
+# scripts/diagnostics/reconcile_broker_yaml.py. Hechos duros (tick/lote/contrato/
+# swap/sesiones) refrescados del broker; spreads historicos/ticker_cascade/
+# eligibility/notes preservados.
+#
+# Convenciones:
+# - swap_type "percent_open_price" / "percent_current_price": valor anualizado
+#   (e.g. -20.0 = -20%). MT5 lo aplica como (valor / 360) * nominal por noche.
+# - swap_type "points": valor fijo de swap por noche en points.
+# - typical_spread_points/worst_spread_points: valores en "points" tal cual los
+#   reporta MT5 (multiplicar por tick_size para USD).
+# - commission_usd_per_lot_per_side: medio coste de comision por lote. AXI Select
+#   cobra 4.5 USD/lote por ROUND-TRIP, facturado INTEGRO EN LA ENTRADA (0 en salida);
+#   lo modelamos como 2.25/lado para que round_trip = 2 * 2.25 = 4.5 = coste real.
+#   En SQX -> "Size based" = 4.5 (round-trip), NUNCA "Per trade". Indices/cripto (.sa) = 0,
+#   FX/metal (.pa, cuenta Pro) = 2.25. Confirmado por usuario 2026-06-24.
+# - point_value_usd: USD por 1.0 de movimiento de precio por 1.0 lote =
+#   contract_size * (cotizacion -> USD). CALCULADO (el export trae bugs de
+#   conversion: XML doble-convierte indices fx; CSV da basura en USDxxx).
+# - sessions_broker_est7: horario en HORA SERVIDOR AXI (EST+7), NO UTC.
+#
+# Pendientes per-simbolo marcados con TODO.
+
+broker: "Axi Select MT5 demo (Pro)"
+account_tier: "pro"
+captured_at: "2026-05-23"
+reconciled_at: "2026-06-20"
+
+# ---------------------------------------------------------------------------
+# CARTERA SEED — DECISION miercoles 2026-06-24 (MINIMALISTA)
+# ---------------------------------------------------------------------------
+# Este YAML contiene SOLO los 4 tickers que la cuenta Seed mina y opera,
+# capturados del run Live Axi-US51-Live (24-jun, script
+# Update_SQX_Instruments_information):
+#     EURUSD.pa  ·  ETHUSD.sa  ·  XAUUSD.pa  ·  NZDUSD.pa
+# Se BORRARON los no-seed (USTECH.sa, USDCHF.pa, AUS200.sa) para mantenerlo
+# minimo; sus specs viven en el historial de git (commit previo a 2026-06-24)
+# y se recapturan del script MT5 cuando se necesite rotar un slot.
+# Fuente de verdad de la decision: la lista de tickers de la cuenta Seed (2026-06-24).
+# ---------------------------------------------------------------------------
+
+symbols:
+
+  # ---------------------------------------------------------------------------
+  # EURUSD.pa — Forex major, cuenta Pro (comision 4.5 round-trip)
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "EURUSD.pa"    # cuenta real Axi-US51-Live (.pa = FX/metal); confirmar en Select activa
+    ticker_cascade: "EURUSD"
+    category: "forex"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 100000
+    tick_size: 0.00001           # 5 digitos
+    pip_size: 0.0001             # 1 pip = 10 ticks (fractional pip forex)
+    tick_value_usd: 1.0          # 1 tick × 100k contract = $1 per lote
+    point_value_usd: 100000.0    # contract 100k x quote USD
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 100.0
+    typical_spread_points: 2     # AXI daily <SPREAD> mediana=2 (script MT5, export 2026-06-24, n=215 barras con dato). UNIDADES MT5 (points=1e-5); NO lo usa SQX
+    worst_spread_points: 20      # conservador: snapshot diario AXI plano (=2), no capta spikes intradía
+    sqx_hp_spread_points: 0.5    # UNIDADES SQX (pips): crosscheck RetestWithHigherPrecision. Decision usuario 2026-09-28 (CP eurusd_h4_robustez)
+    sqx_mc_spread_range: [1, 2.5]  # UNIDADES SQX (pips): MC_Execution_Realism RandomizeSpread Min/Max. Decision usuario 2026-09-28
+    sqx_mc_slippage_range: [0.5, 2]  # UNIDADES SQX (pips): MC_Execution_Realism RandomizeSlippage Min/Max. Decision usuario 2026-09-28
+    commission_usd_per_lot_per_side: 2.25   # 4.5 round-trip (plataforma AXI Select) ⇒ 2.25/lado; SQX SizeBased=4.5
+    swap_type: "points"
+    swap_long_value: -6.93       # refrescado 2026-06-20 (era -7.7)
+    swap_short_value: 3.87       # refrescado 2026-06-20 (era 4.05)
+    triple_swap_day: "wednesday"  # convencion forex spot T+2
+    sessions_broker_est7:        # EST+7. Fuente: export MT5 2026-06-20
+      mon_thu: {open: "00:01", close: "23:59"}
+      fri: {open: "00:01", close: "23:58"}
+    stop_level_points: 0.1       # refrescado 2026-06-20 (era 1)
+    margin_currency: "USD"
+    leverage_max: 1000           # demo Axi-US50
+    notes: |
+      Cuenta Pro: spread tight ECN + comision 4.5 USD/lote/lado.
+      Spread tipico AXI Pro EURUSD ~0.0-0.2 pips = 0-20 points (referencia externa).
+      Valores typical/worst pendientes de captura empirica.
+
+  # ---------------------------------------------------------------------------
+  # NZDUSD.pa — Forex major (commodity FX), cuenta Pro (comision). Anadido 2026-06-21.
+  # Slot FX risk-on del book Seed (ETH/EUR/NZD/XAU). USD-quote, profit USD = caso
+  # forex limpio (calco de EURUSD, cambia swap + spread). Spec MT5 demo 2026-06-21.
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "NZDUSD.pa"    # cuenta real Axi-US51-Live (.pa = FX/metal); confirmar en Select activa
+    ticker_cascade: "NZDUSD"
+    category: "forex"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 100000
+    tick_size: 0.00001           # 5 digitos
+    pip_size: 0.0001             # 1 pip = 10 ticks (fractional pip forex)
+    tick_value_usd: 1.0          # 1 tick × 100k contract = $1 per lote
+    point_value_usd: 100000.0    # contract 100k x quote USD
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 100.0
+    typical_spread_points: 2     # AXI daily <SPREAD> mediana=2 (script MT5, export 2026-06-24, n=1259 barras con dato)
+    worst_spread_points: 20      # conservador: snapshot diario AXI plano (=2), no capta spikes intradía
+    commission_usd_per_lot_per_side: 2.25   # 4.5 round-trip (plataforma AXI Select) ⇒ 2.25/lado; SQX SizeBased=4.5
+    swap_type: "points"
+    swap_long_value: -3.87       # spec MT5 demo 2026-06-21
+    swap_short_value: 0.66
+    triple_swap_day: "wednesday"  # convencion forex spot T+2 (coef Miercoles=3)
+    sessions_broker_est7:        # EST+7. Fuente: spec MT5 demo 2026-06-21
+      mon_thu: {open: "00:01", close: "23:59"}
+      fri: {open: "00:01", close: "23:58"}
+    stop_level_points: 1         # Nivel de Stops spec demo (los otros forex se refrescaron a 0.1 el 2026-06-20; reconciliar al fondear)
+    margin_currency: "USD"       # divisa de deposito; MT5 reporta margen en NZD ~$114.83/lote
+    leverage_max: 1000           # cap forex de cuenta (demo Axi-US50), como EURUSD/USDCHF
+    notes: |
+      Commodity FX antipoda. OJO correlacion: NZD comparte factor AUD/NZD/China con
+      AUS200 -> si se reincorpora el indice antipoda, tratar NZD+AUS200 como ~1 apuesta.
+      Tambien se inclina risk-on con ETH. Gold es el contrapeso del book.
+      typical/worst_spread_points son PLACEHOLDER (~1.2 pip) -> capturar mediana del
+      feed antes de fiarse del coste. Comision 4.5 round-trip SI escala con size; el
+      spread tambien pesa (no es comm=0 como los indices/ETH).
+      Spec MT5 demo: digits 5, contract 100k, swap "En puntos" -3.87/0.66 triple
+      miercoles, comision 4.5/lote en entrada (= 4.5 round-trip por el canon AXI).
+
+  # ---------------------------------------------------------------------------
+  # ETHUSD.sa — Cripto, USD, 24/7 (sin comision)
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "ETHUSD.sa"    # cuenta real Axi-US51-Live (.sa); confirmar en Select activa
+    ticker_cascade: "ETHUSD"
+    category: "crypto"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 1             # 1 CFD = 1 ETH coin
+    tick_size: 0.001             # dígitos=3
+    pip_size: 0.001
+    tick_value_usd: 0.001        # $0.001 per tick per lot
+    point_value_usd: 1.0         # contract 1 x quote USD
+    min_lot: 0.1
+    lot_step: 0.1
+    max_lot: 200.0               # cuenta real (demo daba 1000)
+    typical_spread_points: 1700  # mediana 2024-2026 (~$1.70 USD) (export 2026-06-20: 1250; AXI daily 2026-06-24 reciente=1250)
+    worst_spread_points: 2300    # P95 / max observado capado
+    commission_usd_per_lot_per_side: 0
+    swap_type: "percent_current_price"
+    swap_long_value: -20.0       # -20% anualizado, recalculado sobre precio actual
+    swap_short_value: -5.0
+    triple_swap_day: "friday"
+    sessions_broker_est7:        # EST+7, 7 dias. Fuente: export MT5 2026-06-20
+      sun_fri: {open: "00:01", close: "23:59"}
+      sat: {open: "01:00", close: "23:59"}
+    stop_level_points: 5         # mayor que indices por volatilidad
+    margin_currency: "USD"
+    leverage_max: 200            # demo Axi-US50
+    notes: |
+      24/7 incluyendo fin de semana -> trades over-weekend acumulan 2-3 noches
+      de swap (viernes triple + sabado + domingo). Swap NEGATIVO en ambos lados
+      (-20%/-5%) -> en long-short 4h pagas carry estes largo o corto.
+      Spread stats sobre 881 bars D1 desde 2024-01-01 (datos broker).
+
+  # ---------------------------------------------------------------------------
+  # XAUUSD.pa — Oro spot, Commodities, USD. Re-incluido 2026-06-20 (export MT5).
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "XAUUSD.pa"    # cuenta real Axi-US51-Live (.pa); confirmar en Select activa
+    ticker_cascade: "XAUUSD"
+    category: "metal"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 100
+    tick_size: 0.01
+    pip_size: 0.01
+    tick_value_usd: 1.0          # = tick × point_value
+    point_value_usd: 100.0       # contract 100 x quote USD (verificado 1-trade: Δ17.354×100×0.1=$173.54)
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 20.0
+    typical_spread_points: 8     # AXI daily <SPREAD> mediana=8 (~$0.08); script MT5 export 2026-06-24, n=1593 barras
+    worst_spread_points: 18      # AXI daily p95=18 (~$0.18)
+    sqx_hp_spread_points: 18     # crosscheck RetestWithHigherPrecision; legacy de produccion oro (=worst p95)
+    sqx_mc_spread_range: [15, 30]  # MC_Execution_Realism RandomizeSpread Min/Max; legacy de produccion oro
+    sqx_mc_slippage_range: [2.5, 5]  # MC_Execution_Realism RandomizeSlippage Min/Max; legacy de produccion oro
+    commission_usd_per_lot_per_side: 2.25   # 4.5/lote round-trip (facturado en entrada). Confirmado por usuario 2026-06-24. SQX SizeBased=4.5
+    swap_type: "points"
+    swap_long_value: -58.3
+    swap_short_value: 38.7
+    triple_swap_day: "wednesday"
+    sessions_broker_est7:        # EST+7. Fuente: export MT5 2026-06-20
+      mon_thu: {open: "01:01", close: "23:59"}
+      fri: {open: "01:01", close: "19:59"}
+    stop_level_points: 1
+    margin_currency: "USD"
+    leverage_max: 1000           # demo Axi-US50
+    notes: |
+      Oro spot. point_value 100 verificado por 1-trade.
+      CAVEAT: el rally 2025-26 puede inflar backtests long-only -> cuidar el
+      diseno train/forward, no solo la inclusion. Spread aun a confirmar;
+      comision 4.5/lote round-trip (solo entrada) CONFIRMADA 2026-06-24 -> .pa lleva
+      comision como el resto de FX/metal de la cuenta Pro.
+
+  # ---------------------------------------------------------------------------
+  # XAGUSD.pa — Plata spot, Commodities, USD. Añadido 2026-08-30 desde export MT5
+  # Axi-US51-Live ( Updated SQX Instruments Information ).
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "XAGUSD.pa"    # cuenta real Axi-US51-Live (.pa = FX/metal Pro)
+    ticker_cascade: "XAGUSD"
+    category: "metal"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 5000
+    tick_size: 0.001             # 3 decimales
+    pip_size: 0.001              # 1 pip = 1 tick en plata
+    tick_value_usd: 5.0          # 0.001 × 5000 = $5 per tick per lote
+    point_value_usd: 5000.0      # contract 5000 x quote USD
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 20.0
+    typical_spread_points: 28    # defaultSpread MT5 Axi-US51-Live (~$0.028); PLACEHOLDER histórico
+    worst_spread_points: 56      # 2x defaultSpread; TODO capturar mediana/p95 del feed
+    commission_usd_per_lot_per_side: 2.25   # 4.5/lote round-trip (facturado en entrada). Igual que XAUUSD.pa en cuenta Pro.
+    swap_type: "points"
+    swap_long_value: -13.20      # export MT5 Axi-US51-Live 2026-06-20
+    swap_short_value: 3.60
+    triple_swap_day: "wednesday"
+    sessions_broker_est7:        # EST+7. Fuente: export MT5 Axi-US51-Live
+      mon_thu: {open: "01:01", close: "23:59"}
+      fri: {open: "01:01", close: "23:58"}
+    stop_level_points: 1         # export MT5 Axi-US51-Live
+    margin_currency: "USD"
+    leverage_max: 500            # Axi-US51-Live reporta 1:500 para plata
+    notes: |
+      Plata spot. Mismo esquema de comisiones que XAUUSD.pa en cuenta Pro:
+      4.5 USD/lote round-trip facturado integro en la entrada -> modelado 2.25/lado.
+      El typical/worst_spread son PLACEHOLDER tomados del defaultSpread del broker;
+      capturar mediana historica antes de fiarse del coste total.
+
+  # ---------------------------------------------------------------------------
+  # USATECHIDXUSD.sa — NAS100/NASDAQ índice, USD. Añadido 2026-07-17 para la app
+  # de riesgo (cartera de pruebas). Specs del MT5 (2026-07-17). .sa = comisión 0.
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "USATECHIDXUSD.sa"   # raíz USATECHIDXUSD casa con CSV USATECHIDXUSD_axi
+    ticker_cascade: "USATECHIDXUSD"
+    category: "index"
+    eligible_for_allocation: true
+    quote_currency: "USD"
+    contract_size: 20
+    tick_size: 1
+    pip_size: 20
+    tick_value_usd: 20.0          # point_value × tick_size = 20×1
+    point_value_usd: 20.0         # USD por 1.0 de precio por 1.0 lote (spec MT5)
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 50.0
+    typical_spread_points: 2.5    # DEFAULT SPREAD PIPS (spec MT5)
+    worst_spread_points: 5.0
+    sqx_hp_spread_points: 2.5       # crosscheck RetestWithHigherPrecision (=typical). Asentado 2026-09-09 (el 18 del oro seco la cadena de e23y: 308->0)
+    sqx_mc_spread_range: [2, 6]     # MC_Execution_Realism RandomizeSpread Min/Max. Asentado 2026-09-09
+    sqx_mc_slippage_range: [2, 5]   # MC_Execution_Realism RandomizeSlippage Min/Max. Asentado 2026-09-09
+    commission_usd_per_lot_per_side: 0.0   # .sa = índice/cripto = 0 (decisión de tickers de la cuenta Seed)
+    swap_type: "percent_open_price"
+    swap_long_value: 0.0          # NAS100 swap-0 en Select (specs de índices futuros de Axi)
+    swap_short_value: 0.0
+    triple_swap_day: "wednesday"
+    sessions_broker_est7:
+      mon_thu: {open: "09:30", close: "16:00"}
+      fri: {open: "09:30", close: "16:00"}
+    stop_level_points: 1
+    margin_currency: "USD"
+    leverage_max: 100
+    notes: |
+      NASDAQ100 (USATECHIDXUSD). Specs MT5 2026-07-17: pointValue=20, tickSize=1,
+      pipStep=20, spread 2.5, lot_step 0.01. Comisión 0 (.sa). VERIFICAR paridad ATR-vs-CSV
+      sobre la cartera de pruebas (test_risk_sizing_parity); la ratio confirma/corrige point_value.
+      Timezone USATECHIDXUSD D1 puede descuadrar 2h (alineación de timezone SQX↔AXI).
+
+  # ---------------------------------------------------------------------------
+  # DAX40.fs — DAX 40, CFD-de-futuro (futures-derived). Anadido 2026-07-18 para
+  # la app de riesgo (cartera de pruebas DAX+oro). Specs del export
+  # MT5 Update_SQX_Instruments_information sobre Axi-US51-Live
+  # (specs de índices futuros de Axi). .fs = comision 0 + swap 0 (carry via roll).
+  # ---------------------------------------------------------------------------
+  - ticker_axi: "DAX40.fs"
+    ticker_cascade: "DEUIDXEUR"    # raiz del simbolo en datos SQX/Dukascopy (DEUIDXEUR_axi)
+    category: "index"
+    eligible_for_allocation: true
+    quote_currency: "EUR"          # cotiza en EUR; point_value_usd ya convertido
+    contract_size: 25              # 25 EUR por punto (E-mini DAX)
+    tick_size: 0.01                # 2 digitos
+    pip_size: 0.01
+    tick_value_usd: 0.2849         # tick_size x point_value_usd
+    point_value_usd: 28.49         # 25 EUR x EURUSD(~1.14); REVISAR si EURUSD se mueve
+    min_lot: 0.01
+    lot_step: 0.01
+    max_lot: 10.0                  # TODO: no capturado en el export; conservador
+    typical_spread_points: 500     # 500 points MT5 (0.01) = 5 pts indice (~2.1bps); en SQX (pip size 1) = 5
+    worst_spread_points: 1000      # estimacion conservadora 2x; TODO capturar empirico
+    commission_usd_per_lot_per_side: 0.0   # .fs = comision 0 (futures-derived)
+    swap_type: "points"
+    swap_long_value: 0.0           # swap 0/0: el carry va embebido en el roll del futuro
+    swap_short_value: 0.0
+    triple_swap_day: "monday"      # irrelevante (swap 0); spec del export
+    sessions_broker_est7:          # OJO: sesion del export con TimeOffset=0 (NO EST+7); TODO convertir
+      mon_fri: {open: "03:15", close: "22:59"}
+    stop_level_points: 1           # TODO: no capturado; como USATECHIDXUSD.sa
+    margin_currency: "EUR"
+    leverage_max: 100              # AXI Select = 100:1 fijo
+    notes: |
+      DAX 40 futures-derived CFD (DAX40.fs). Comision 0 + swap 0 -> unico coste =
+      spread (5 pts = ~$1.42 a lote 0.01). Rolado trimestral (Mar/Jun/Sep/Dic):
+      verificar con AXI metodo (ajuste de caja vs cierre) y si ajustan stops.
+      point_value_usd depende del EURUSD (25 EUR fijos en EUR).
+      En SQX: Pip/Tick size 1, Point value 28.49, tick step 0.01 si el dato es 2-digit
+      (0.1 si la serie es Dukascopy 1-decimal), spread 5, comision None, swap 0.
+      OHLC M1 en risk_app/inputs/ohlc/DEUIDXEUR_axi.csv. Co-mueve con NAS100/DJ30
+      (~1-1.5 apuestas efectivas): no contar como diversificador independiente.
+
+# ---------------------------------------------------------------------------
+# REFERENCIA: BTCUSD (no incluido en cartera Seed por sizing)
+# ---------------------------------------------------------------------------
+# BTCUSD se queda fuera de cartera mientras esta en Seed ($5k Allocation
+# capada) porque 0.10 lote BTC = ~$7,800 nominal = 156% equity. Un SL del 3%
+# del precio toca -4.8% Allocation per-trade, dejando solo margen para
+# 1.5 trades antes de Max Loss -7%.
+#
+# Reevaluar en Pro (Allocation $200k+) — BTC tiene coste % nominal mejor que
+# ETH (0.07% vs 0.11% con datos 2024-2026).
+#
+# Specs capturados (para usar cuando rote el slot):
+#   ticker_axi: "BTCUSD"
+#   category: "crypto"
+#   quote_currency: "USD"
+#   contract_size: 1                  # 1 CFD = 1 BTC
+#   tick_size: 0.01                   # digitos=2
+#   pip_size: 1.0
+#   min_lot: 0.1, lot_step: 0.1, max_lot: 1000.0
+#   typical_spread_points: 1257       # mediana 2024-2026 ($12.57)
+#   worst_spread_points: 2500         # P95 ($25)
+#   swap_type: "percent_current_price"
+#   swap_long_value: -20.0
+#   swap_short_value: -5.0
+#   triple_swap_day: "friday"
+#   sessions_broker_est7: 24/7
+#   stop_level_points: 5
+#
+# NOTA 2026-06-20: JPN225 y USDJPY.pro borrados del yaml (fuera Japon del set;
+# su exposicion JPY se solapa y la macro especial los correlaciona). Re-capturar
+# del script MT5 si se recuperan.
+#
+# NOTA 2026-06-24: USTECH.sa, USDCHF.pa y AUS200.sa borrados del yaml (cartera Seed
+# minimalista = solo los 4 activos que se operan ahora). Eran universo de fases
+# posteriores; sus specs estan en git (commit previo) y en el export del script MT5.
+# Re-anadir cuando rote un slot (recuperan tambien las ramas de test percent_open /
+# fx-conversion, hoy cubiertas por fixtures sinteticos en test_broker_config.py).

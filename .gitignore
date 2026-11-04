@@ -1,0 +1,21 @@
+# Datos propios: nunca se versionan. Excepciones: los .gitkeep y la demo sintetica
+# (solo las tres carpetas demo_cfd, demo_futuros y demo_axi).
+risk_app/inputs/**
+!risk_app/inputs/**/
+!risk_app/inputs/**/.gitkeep
+!risk_app/inputs/strategies/demo_cfd/**
+!risk_app/inputs/strategies/demo_futuros/**
+!risk_app/inputs/strategies/demo_axi/**
+
+# Resultados locales de la app y configuracion local
+poc_web/api/runs/
+config/local.yaml
+config/propfirms.user.yaml
+config/symbols.user.yaml
+
+# Entorno y caches (poc_web/web/dist/ SI se versiona: es el front compilado)
+node_modules/
+__pycache__/
+.pytest_cache/
+.venv/
+.DS_Store

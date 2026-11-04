@@ -1,0 +1,153 @@
+# Reglas de AXI Select.
+#
+# Fuente autoritativa: documento oficial AXI Select (info_axi.md en raíz).
+# Cuando entren en conflicto otros documentos, gana este YAML.
+# Última revisión: 2026-05-23.
+
+prop_firm: "Axi Select"
+account_currency: "USD"
+
+# Reglas globales del programa (no dependen de la etapa).
+program:
+  # Cuarentena: 1 semana (doc oficial). Solo aplica en Incubation y Acceleration.
+  quarantine_days: 7
+  quarantine_applies_to: ["incubation", "acceleration"]
+  # Tras la 3ª cuarentena se vuelve a Seed.
+  max_quarantines_before_seed_reset: 3
+
+  # Restricciones operativas (todas confirmadas via Perplexity 2026-05-23).
+  news_restriction: false
+  weekend_hold_allowed: true
+  hedging_allowed: true
+  hedge_counts_as_unique_trade: false
+
+  # Edge Score reset: disponible 90 días tras abrir cuenta, luego cada 90 días.
+  edge_score_reset_period_days: 90
+
+  # Scalping: prohibido HFT / latency arbitrage, no scalping legítimo.
+  # Umbrales proxy para warnings del validador (no son fail automático).
+  hft_proxy:
+    avg_trade_duration_warn_minutes: 15
+    trades_per_day_per_symbol_warn: 30
+    min_holding_seconds_hard_flag: 60
+
+  # Símbolos elegibles para copiar a Allocation Account.
+  # Source: tabla oficial AXI Select.
+  symbol_eligibility:
+    forex: "all"            # Todos los símbolos forex elegibles
+    indices: "all"          # Todos los índices elegibles
+    index_futures: "all"    # Solo futuros de índice
+    commodities_spot: ["Brent", "WTI"]
+    metals_spot: ["XAUUSD", "XAGUSD"]   # Oro y plata spot
+    crypto: ["BTCUSD", "ETHUSD"]
+    stocks: ["META", "MSFT", "AMZN", "GOOGL", "TSLA", "NFLX", "AAPL"]
+    # Listado de NO elegibles (informativo).
+    excluded:
+      futures_non_index: ["Brent_futures", "WTI_futures", "Cocoa", "Coffee",
+                          "Copper", "NaturalGas", "Soybean", "Gold_futures",
+                          "Silver_futures"]
+      metals_other: "all_except_gold_silver"
+      crypto_other: "all_except_btc_eth"
+      stocks_other: "all_except_listed"
+
+# Etapas (phases) — orden de progresión.
+# Max Loss es DRAWDOWN ESTÁTICO sobre Allocation inicial de la etapa,
+# evaluado en tiempo real sobre equity (incluye no realizadas).
+# Profit Target es el threshold sobre Allocation original para avanzar.
+phases:
+
+  - name: "seed"
+    display_name: "Seed"
+    order: 1
+    min_equity_usd: 500
+    edge_score_min: 50
+    max_funding_multiplier: 10
+    max_funding_usd: 5000
+    profit_share_pct: 0.0          # Sin payout en Seed
+    profit_target_pct: 7.0
+    min_days: 30
+    min_unique_trades: 20
+    leverage: 1000                  # 2026-10-09: Seed "up to 1000:1", resto 100:1 (PDF Axi Select Program Rules + axi.com/int/funded-trader-program). Antes 100 por un artículo de soporte retirado.
+    max_loss_pct: -7.0
+    quarantine_applies: false       # Seed reseteable libre, sin cuarentena
+    previous_phase: null
+
+  - name: "incubation"
+    display_name: "Incubation"
+    order: 2
+    min_equity_usd: 1000
+    edge_score_min: 60
+    max_funding_multiplier: 10
+    max_funding_usd: 20000
+    profit_share_pct: 40.0
+    profit_target_pct: 7.0
+    min_days: 60
+    min_unique_trades: 40
+    leverage: 100
+    max_loss_pct: -7.0
+    quarantine_applies: true
+    previous_phase: "seed"
+
+  - name: "acceleration"
+    display_name: "Acceleration"
+    order: 3
+    min_equity_usd: 2000
+    edge_score_min: 70
+    max_funding_multiplier: 25
+    max_funding_usd: 100000
+    profit_share_pct: 50.0
+    profit_target_pct: 7.0
+    min_days: 60
+    min_unique_trades: 50
+    leverage: 100
+    max_loss_pct: -7.0
+    quarantine_applies: true
+    previous_phase: "incubation"
+
+  - name: "pro"
+    display_name: "Pro"
+    order: 4
+    min_equity_usd: 5000
+    edge_score_min: 90
+    max_funding_multiplier: 40
+    max_funding_usd: 200000
+    profit_share_pct: 60.0
+    profit_target_pct: 7.0
+    min_days: 60
+    min_unique_trades: 50
+    leverage: 100
+    max_loss_pct: -7.0
+    quarantine_applies: false       # Pro+ no tiene cuarentena → vuelves a Seed
+    previous_phase: "acceleration"
+
+  - name: "pro_500"
+    display_name: "Pro 500"
+    order: 5
+    min_equity_usd: 10000
+    edge_score_min: 90
+    max_funding_multiplier: 50
+    max_funding_usd: 500000
+    profit_share_pct: 70.0
+    profit_target_pct: 7.0
+    min_days: 60
+    min_unique_trades: 50
+    leverage: 100
+    max_loss_pct: -7.0
+    quarantine_applies: false
+    previous_phase: "pro"
+
+  - name: "pro_m"
+    display_name: "Pro M"
+    order: 6
+    min_equity_usd: 20000
+    edge_score_min: 90
+    max_funding_multiplier: 50
+    max_funding_usd: 1000000
+    profit_share_pct: 80.0
+    profit_target_pct: null         # No hay profit target adicional en Pro M
+    min_days: null                  # No hay min days adicional
+    min_unique_trades: null         # No hay min trades adicional
+    leverage: 100
+    max_loss_pct: -10.0             # Único caso con -10%
+    quarantine_applies: false
+    previous_phase: "pro_500"

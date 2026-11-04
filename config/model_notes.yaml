@@ -1,0 +1,476 @@
+version: 1
+# Compañías con notas propias POR MODELO (guardrail perfiles-v2). "otras" en `ambito.empresa` casa con
+# CUALQUIER compañía que NO esté en la lista del modelo del perfil (un perfil cycle de "Apex" es "otras"). `ambito` admite además `empresa` (lista; "*" por defecto),
+# `fases` (lista de enteros = nº de fases de evaluación; "*" por defecto) y `perfil` (lista; "*" por
+# defecto; "usuario" = solo perfiles escritos por el usuario, "copia" = perfil de usuario de futuros
+# cuya compañía difiere de la del oficial del que copia la mecánica).
+empresas_con_notas: {cycle: [FTMO], ladder: [Apex], futures: [FTMO]}
+notas:
+  # --- Comunes (las dos lentes) ---------------------------------------------------------------
+  - id: remuestreo_bloques
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Historias alternativas por bloques"
+    texto: >-
+      La app no inventa operaciones: corta tu backtest en bloques "de plano a plano" (tramos entre momentos en que
+      todas las patas están sin posición) y los vuelve a ordenar al azar cientos o miles de veces. Dentro de cada bloque se
+      conservan los días, las operaciones y el flotante tal como ocurrieron.
+    en_esta_corrida: "Esta corrida usa {n_blocks} bloques de tu backtest, que cubre unos {span_dias} días."
+    fuente: "src/risk/mc_portfolio.py:276-301; src/risk/mc.py:65-98"
+  - id: tamano_bloque
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Bloques que van juntos"
+    texto: >-
+      Para no romper la dependencia entre bloques seguidos, los bloques se toman en grupos de longitud variable. El
+      tamaño medio del grupo lo elige automáticamente el método de Politis y White (2004, con la corrección de 2009)
+      sobre el resultado de cada bloque medido en riesgos (R): sube cuando los bloques vecinos se parecen o se
+      compensan, y vale 1 cuando no hay dependencia. No depende de la f ni de la rejilla. Con menos de 25 bloques, o si
+      más del 10 % de las operaciones no tienen un riesgo por lote válido, se usan bloques sueltos.
+    en_esta_corrida: "Grupos de {bs} bloques de media ({bs_modo}): {bs_razon}."
+    fuente: "src/risk/block_length.py; poc_web/api/main.py (_episode_r_series y bloque automático)"
+  - id: pocos_bloques
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Cuántos bloques hacen falta"
+    texto: >-
+      Con menos de 5 bloques la app no calcula. Con menos de 30 avisa: hay pocas piezas distintas que barajar y las
+      historias alternativas se parecen demasiado entre sí, así que las probabilidades son menos fiables.
+    fuente: "poc_web/api/main.py (guarda de bloques y avisos de carga)"
+  - id: edge_del_backtest
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: optimista
+    titulo: "Se asume que tu ventaja sigue igual"
+    texto: >-
+      Todas las cifras dan por hecho que las estrategias rinden en el futuro como en el backtest: no se descuenta la
+      pérdida de ventaja con el tiempo. Si cortas una parte fuera de muestra (IS/OOS), puedes ver la diferencia.
+    fuente: "propfirm-sim (caveat 'neto condicional al edge')"
+  - id: costes_backtest
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: optimista
+    titulo: "Costes del backtest, sin deslizamiento extra"
+    texto: >-
+      Los resultados de cada operación son los de tu backtest, con los costes que incluye. La app no añade
+      deslizamiento ni huecos de precio extra en la ejecución real.
+    fuente: "src/risk/propfirm.py (barreras sobre el PnL de los bloques)"
+  # guardrail csv-d1-d2, fase 1 (2026-10-19): Enmienda v2 E2 del plan.
+  # PLAN-DESVIO: el texto difiere del literal de E2 en dos puntos. (1) Sin los backticks de markdown alrededor de
+  # FixedAmount: la app pinta el texto tal cual y las demás notas no usan markdown. (2) «(±10 % en FTMO)» pasa a «(del
+  # orden de ±10 %)»: la nota es de ámbito `*` (todas las compañías y la lente AXI) y la invariante AC5 de perfiles-v2
+  # prohíbe que una nota mostrada a otra compañía nombre a FTMO (tests/test_model_notes.py y
+  # poc_web/api/test_profiles_templates.py). Restaurar «en FTMO» exige exceptuar esta nota en esos dos tests.
+  # PLAN-DESVIO: sin `en_esta_corrida` (lo pide el encargo; no hay cifra por corrida que poner), así que la nota sale en
+  # «Supuestos del perfil» (catalog: `caveats` de cada perfil y `model_notes_axi`) y NO en `meta.model_context.notes`,
+  # que solo lleva las notas con plantilla rellenable: el AC1.7 «aparece en model_context» se cumple por el catálogo.
+  - id: lote_sobre_cuenta
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Riesgo sobre el tamaño de cuenta"
+    texto: >-
+      El lote de cada operación se calcula sobre el tamaño de cuenta, sin reinvertir: no crece ni mengua con el saldo
+      simulado. Si tu EA arriesga un importe fijo (FixedAmount), es exactamente lo que hace. Si arriesga un % de la
+      equity del momento, es una aproximación: en un reto la equity se mueve poco (del orden de ±10 %), pero en
+      cuentas grandes o con horizontes largos la diferencia crece.
+    fuente: "poc_web/api/main.py (_leg_lots, CSV_SIZING_COMPOUND); src/risk/mm.py (simulate_f, compound); csv-d1-d2-plan.md §2.1 y Enmiendas v2 E1-E2"
+  # guardrail csv-d1-d2, fase 2 (2026-10-19): defecto D2 (el flotante diario no sumaba el realizado del día). Texto de §2.4
+  # del plan. Sale en la lente AXI y en los perfiles prop firm ESTÁTICOS (modelo cycle); no en ladder ni futures (Apex y
+  # los futuros usan el flotante del trailing, que ya incluye el realizado). Sin nombrar a ninguna compañía (invariante
+  # AC5 de perfiles-v2: la nota es de ámbito `empresa: "*"`) y sin markdown. Sin `en_esta_corrida` (no hay cifra por
+  # corrida), así que sale en «Supuestos del perfil» como `lote_sobre_cuenta`.
+  # PLAN-DESVIO: el plan no fija el `sesgo` de esta nota. Se elige `conservador`: es una cota por minuto (el peor precio
+  # de cada minuto para todas las posiciones a la vez, y el MAE desde la apertura para las órdenes sin M1), que hace los
+  # chequeos de pérdida más duros, no más blandos que la realidad. Los residuos anti-conservadores (lo que ocurra dentro
+  # de la barra de cierre; las órdenes sin MAE en el CSV) tienen su aviso propio en la corrida.
+  # Aviso para el lector del plan: en la lente AXI la segunda frase aplica a órdenes sin M1 que entrarían en la simulación,
+  # y hoy los bloques de AXI (`build_block_records`, motor) dejan fuera esas órdenes (`meta.coverage` lo refleja).
+  - id: flotante_por_minuto
+    ambito: {lente: [propfirm, axi], modelo: [cycle], tipo: [cfd]}
+    sesgo: neutral
+    titulo: "El peor momento del día, minuto a minuto"
+    texto: >-
+      El peor momento de cada día suma lo ya cerrado ese día y el flotante de las posiciones abiertas, minuto a minuto.
+      En los retos de prop firm, las órdenes sin precios de 1 minuto se acotan con su peor flotante (MAE) desde la
+      apertura; en la evaluación por etapas quedan fuera de la simulación (ver la cobertura al cargar la cartera).
+    fuente: "poc_web/api/main.py (_csv_minute_series, CSV_FLOAT_MODE, AXI_FLOAT_MODE); poc_web/api/axi_path.py (precompute_minute); src/risk/propfirm.py (float_mode minute); plan csv-d1-d2 §2.2-2.4 y Enmiendas v2 E3, E10"
+  # --- Prop firms, todos los modelos ----------------------------------------------------------
+  - id: ev_condicional_resolver
+    ambito: {lente: [propfirm], modelo: [cycle, ladder], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Historias que no se resuelven"
+    texto: >-
+      Si en una historia el reto ni se aprueba ni se suspende antes de acabarse tu backtest, esa historia se deja
+      fuera del EV y de la probabilidad de pasar (se informa como P(sin resolver)). Por encima del 5 % conviene
+      desconfiar: el backtest se queda corto para ese tamaño de riesgo.
+    fuente: "src/risk/propfirm.py (unresolved = neither1 | neither2)"
+  - id: fases_continuas
+    ambito: {lente: [propfirm], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Cada fase sigue a la anterior"
+    texto: >-
+      Cada fase empieza en el siguiente momento sin posiciones tras resolver la anterior (la cuenta fondeada, tras la
+      última fase de evaluación), siguiendo la misma historia. Las operaciones que quedarían en el resto de ese tramo
+      no se cuentan.
+    fuente: "src/risk/propfirm.py (PhaseTape, _next_start)"
+  - id: espera_entre_fases
+    ambito: {lente: [propfirm], modelo: [cycle, ladder], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Sin días de espera entre fases"
+    texto: >-
+      No se cuentan los días de espera entre fases (por ejemplo, mientras se da de alta la cuenta nueva): la
+      siguiente fase empieza en cuanto se resuelve la anterior.
+    fuente: "src/risk/propfirm.py (PhaseTape, _next_start)"
+  - id: reglas_de_usuario
+    ambito: {lente: [propfirm], modelo: ["*"], tipo: ["*"], perfil: [usuario]}
+    sesgo: neutral
+    titulo: "Reglas escritas por ti"
+    texto: >-
+      Estas reglas las has escrito o cambiado tú: la app no comprueba que coincidan con las de la firma. Revisa la fecha
+      de verificación del perfil.
+    fuente: "perfiles-v2-plan.md §2.4 (nota reglas_de_usuario)"
+  - id: plantilla_base
+    ambito: {lente: [propfirm], modelo: [ladder, futures], tipo: [futures], perfil: [copia]}
+    sesgo: neutral
+    titulo: "Mecánica copiada de otra firma"
+    texto_plantilla: >-
+      Este perfil copia la mecánica de {base_nombre}: los avisos de abajo hablan de esa firma y de cómo la modela la app.
+    fuente: "perfiles-v2-plan.md Enmienda v2 3 (plantilla_base)"
+  # --- FTMO CFD (modelo cycle) ------------------------------------------------------------------
+  - id: futures_ev_incondicional
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: neutral
+    titulo: "EV por campaña, sin excluir historias"
+    texto: >-
+      En FTMO Futures el EV es por campaña de suscripción (con su tope de días) y no deja fuera ninguna historia: las
+      que no se resuelven cuentan con lo que han costado. P(sin resolver) solo informa. La fondeada empieza tras el
+      retraso de alta del perfil.
+    fuente: "poc_web/api/main.py (ev_semantics de la rama futures); config/propfirms.yaml (subscription)"
+  - id: ftmo_post_objetivo
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: ["*"]}
+    sesgo: conservador
+    titulo: "Objetivo antes de los días mínimos"
+    texto: >-
+      Si llegas al objetivo antes de cumplir los días mínimos de trading, la simulación sigue operando con el mismo
+      riesgo hasta cumplirlos. En la realidad se suelen hacer operaciones mínimas esos días, así que aquí el riesgo de
+      suspender después del objetivo es algo mayor que el real.
+    fuente: "src/risk/propfirm.py (evaluate_phase_path: post-target continúa a riesgo normal)"
+  - id: ftmo_cobros_ciclos
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO]}
+    sesgo: conservador
+    titulo: "Cobros cada ciclo fijo"
+    texto: >-
+      En la cuenta fondeada se cobra al final de cada ciclo fijo de días si el beneficio supera el mínimo; después la
+      cuenta vuelve al saldo inicial. En la realidad el primer cobro es a partir del día 14 y luego a demanda, y existe
+      la opción de dejar parte del beneficio como colchón: ninguna de las dos se modela.
+    fuente: "config/propfirms.yaml (cabecera, aproximaciones); src/risk/propfirm.py (evaluate_funded_path)"
+  - id: cobros_ciclos_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: conservador
+    titulo: "Cobros cada ciclo fijo"
+    texto: >-
+      En la cuenta fondeada se cobra al final de cada ciclo fijo de días si el beneficio supera el mínimo; después la
+      cuenta vuelve al saldo inicial. En la realidad muchas firmas permiten cobrar a demanda o dejar parte del beneficio
+      como colchón: la app no lo modela.
+    fuente: "perfiles-v2-plan.md §2.4 (variante de ftmo_cobros_ciclos)"
+  - id: ftmo_horizonte_fondeada
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO]}
+    sesgo: conservador
+    titulo: "Hasta cuándo se cuenta la fondeada"
+    texto: >-
+      La cuenta fondeada se sigue hasta un tope de ciclos de cobro (un límite de la simulación, no una regla de FTMO)
+      o hasta que se acaba la ventana de tu backtest, lo que llegue antes. Las fondeadas que siguen vivas en ese
+      momento dejan de sumar cobros: el EV a largo plazo queda corto si tu backtest es más corto que el tope.
+    en_esta_corrida: >-
+      Tope de la simulación: {cap_dias} días. Tu backtest cubre unos {span_dias} días: con la f recomendada,
+      el {pct_cortadas_datos} de las fondeadas seguía viva cuando se acabaron los datos.
+    fuente: "config/propfirms.yaml (payout_cycle_days, max_payout_cycles); src/risk/propfirm.py (evaluate_funded_path)"
+  - id: horizonte_fondeada_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: conservador
+    titulo: "Hasta cuándo se cuenta la fondeada"
+    texto: >-
+      La cuenta fondeada se sigue hasta un tope de ciclos de cobro (un límite de la simulación, no una regla de la firma)
+      o hasta que se acaba la ventana de tu backtest, lo que llegue antes. Las fondeadas que siguen vivas en ese
+      momento dejan de sumar cobros: el EV a largo plazo queda corto si tu backtest es más corto que el tope.
+    en_esta_corrida: >-
+      Tope de la simulación: {cap_dias} días. Tu backtest cubre unos {span_dias} días: con la f recomendada,
+      el {pct_cortadas_datos} de las fondeadas seguía viva cuando se acabaron los datos.
+    fuente: "perfiles-v2-plan.md §2.4 (variante de ftmo_horizonte_fondeada)"
+  - id: ftmo_noticias_finde
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO]}
+    sesgo: optimista
+    titulo: "Noticias y fin de semana (cuentas Standard)"
+    texto: >-
+      En la cuenta fondeada Standard, FTMO prohíbe operar alrededor de noticias importantes y obliga a cerrar las
+      posiciones antes del fin de semana y de los cierres de mercado de más de 2 horas. Ninguna de estas reglas se
+      modela, así que la supervivencia de la fondeada Standard sale más alta que la real. Las cuentas Swing están
+      exentas.
+    fuente: "config/propfirms.yaml (cabecera, aproximaciones)"
+  - id: conducta_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: optimista
+    titulo: "Reglas de conducta no modeladas"
+    texto: >-
+      Las reglas de conducta de la firma (noticias, fin de semana, estrategias prohibidas…) no se modelan: si tu firma
+      las tiene, la supervivencia sale más alta que la real.
+    fuente: "perfiles-v2-plan.md §2.4 (variante de ftmo_noticias_finde)"
+  - id: ftmo_split_fijo
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO]}
+    sesgo: conservador
+    titulo: "Reparto fijo y sin plan de escalado"
+    texto: >-
+      Se usa el reparto de beneficios del perfil todo el tiempo. El plan de escalado de FTMO (más capital y mejor
+      reparto tras varios meses con beneficios y cobros) no se modela.
+    fuente: "config/propfirms.yaml (cabecera, aproximaciones)"
+  - id: split_fijo_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: conservador
+    titulo: "Reparto fijo y sin plan de escalado"
+    texto: >-
+      Se usa el reparto de beneficios del perfil todo el tiempo; los planes de escalado (más capital o mejor reparto) no
+      se modelan.
+    fuente: "perfiles-v2-plan.md §2.4 (variante de ftmo_split_fijo)"
+  - id: ftmo_eje_dias
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO]}
+    sesgo: neutral
+    titulo: "Cuándo empieza el día"
+    texto: >-
+      FTMO reinicia la pérdida diaria a medianoche de Europa central. Con el eje de días "ftmo" la app usa ese corte;
+      con el eje "servidor" usa la medianoche del servidor del broker y la probabilidad de pasar sale entre 1 y 5
+      puntos más optimista. Úsalo solo para comparar.
+    fuente: "poc_web/api/main.py (day_axis_note)"
+  - id: eje_dias_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: neutral
+    titulo: "Cuándo empieza el día"
+    texto: >-
+      La app corta el día a medianoche de Europa central (primera opción del selector "Eje de días") o a medianoche del
+      servidor del broker. Con el corte del servidor, la probabilidad de pasar puede salir algo más optimista (en las
+      carteras medidas, entre 1 y 5 puntos): úsalo solo para comparar. Comprueba a qué hora reinicia tu firma la pérdida
+      diaria.
+    fuente: "perfiles-v2-plan.md Enmienda v2 2 (variante de ftmo_eje_dias)"
+  - id: ftmo_sin_consistencia
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO], fases: [2]}
+    sesgo: neutral
+    titulo: "Sin regla de consistencia"
+    texto: >-
+      El reto de dos fases de FTMO no tiene regla de consistencia (la del "mejor día" es del reto de una fase, que es
+      otro producto con otras reglas).
+    fuente: "docs/referencia/firmas_fondeo_20261012/ftmo.md"
+  - id: ftmo_1f_consistencia
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [FTMO], fases: [1]}
+    sesgo: optimista
+    titulo: "Regla del mejor día no modelada"
+    texto: >-
+      El reto de una fase de FTMO tiene una regla del mejor día que la app no modela: el resultado sale optimista.
+    fuente: "perfiles-v2-plan.md Enmienda v2 2; docs/referencia/firmas_fondeo_20261012/ftmo.md"
+  - id: consistencia_otras
+    ambito: {lente: [propfirm], modelo: [cycle], tipo: [cfd], empresa: [otras]}
+    sesgo: optimista
+    titulo: "Sin regla de consistencia"
+    texto: >-
+      La app no modela reglas de consistencia (mejor día) ni drawdown trailing en este tipo de reto. Si tu reto los tiene,
+      el resultado sale optimista.
+    fuente: "perfiles-v2-plan.md §2.4 (variante de ftmo_sin_consistencia)"
+  # --- FTMO Futures (modelo futures): cadenas de _profile_caveats de HEAD 6e66324, literales -----
+  - id: futures_1
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: conservador
+    titulo: "Horizontes de truncado del modelo"
+    texto: >-
+      Cap de campaña (183d) / funded (365d) / 50 ciclos de payout son horizontes de TRUNCADO del modelo (decisión
+      2026-09-29), NO reglas FTMO — se reportan p_truncated / alive_at_cap.
+    fuente: "poc_web/api/main.py (_profile_caveats HEAD 6e66324); config/propfirms.yaml:80-82"
+  - id: futures_2
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: optimista
+    titulo: "Breach de equity sin comisiones"
+    texto: >-
+      El breach de drawdown/daily loss usa rel_low GROSS de comisiones → el chequeo de equity es levemente
+      optimista (ligado a ruleset_version).
+    fuente: "config/propfirms.yaml:83-84"
+  - id: futures_3
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Fase Beta y retirada del plan Pro"
+    texto: >-
+      Fase Beta: consta solo en el blog de lanzamiento (no en la página de reglas); FTMO promete no cambiar reglas
+      retroactivamente en cuentas activas. El 'Withdraw 100%' de Pro es la FRACCIÓN RETIRABLE del profit — el
+      ratio 90/10 aplica sobre lo solicitado.
+    fuente: "config/propfirms.yaml:73-79"
+  - id: futures_4
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Daily loss de Growth sin deslizamiento"
+    texto: >-
+      Growth: el hit de daily loss cierra todo y suspende el día (pause_not_fatal) modelado como liquidación en el
+      suelo sin slippage; un día con hit y cierre ≥ umbral cualifica.
+    fuente: "config/propfirms.yaml:64-66; src/risk/propfirm_futures.py"
+  - id: futures_5
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Escalado de contratos sin verificar"
+    texto: >-
+      El escalado de contratos de la funded (scaling tiers) NO está verificado (pendiente de verificar): sin
+      diagnóstico de cap PA — solo el cap de contratos de la evaluación.
+    fuente: "config/propfirms.yaml:85-87"
+  - id: futures_6
+    ambito: {lente: [propfirm], modelo: [futures], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Métricas de la fondeada sobre un pool de paths"
+    texto: >-
+      Las métricas de la funded (días a payout, alive_at_cap, DLL hits, deferrals) se calculan sobre el POOL de
+      paths passed del backtest (las campañas re-dibujan paths con reemplazo): una campaña passed puede contar de
+      nuevo paths ya observados.
+    fuente: "src/risk/propfirm_futures.py; poc_web/api/futures_report.py"
+  # --- Apex (modelo ladder): cadenas de _profile_caveats de HEAD 6e66324, literales ---------------
+  - id: apex_1
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: optimista
+    titulo: "Trailing intradía sin acotar entre barras"
+    texto: >-
+      Trailing intradía: el wander entre la última barra M1 y el cierre de cada trade NO está acotado (optimismo
+      heredado; el punto de cierre sí es exacto vía PnL realizado).
+    fuente: "src/risk/propfirm_trailing.py"
+  - id: apex_2
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Deferral de consistencia del 50 %"
+    texto: >-
+      Deferral de consistencia (50%): se asume que los días cualificados SE CONSERVAN tras una denegación y se
+      reevalúa cada sesión — supuesto a verificar contra el help center (ligado a ruleset_version).
+    fuente: "src/risk/propfirm_ladder.py"
+  - id: apex_3
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: optimista
+    titulo: "Backtest tratado como neto de comisiones"
+    texto: >-
+      Backtest tratado como neto de comisiones: si es gross, los días cualificados ($300) y la inactividad ($50)
+      quedan levemente optimistas.
+    fuente: "src/risk/propfirm_ladder.py"
+  - id: apex_4
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Daily loss: clamp sin deslizamiento"
+    texto: >-
+      Hit de DLL con clamp sin slippage: PnL de sesión := min(observado, −DLL); la liquidación forzosa real puede
+      quedar peor (conservador en PnL, sin modelar el deslizamiento).
+    fuente: "src/risk/propfirm_ladder.py"
+  - id: apex_5
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: neutral
+    titulo: "Multi-cuenta con correlación perfecta"
+    texto: >-
+      Multi-cuenta (n_copied_accounts > 1): correlación PERFECTA entre cuentas — pasan/queman a la vez; el riesgo
+      de cola no se diversifica.
+    fuente: "src/risk/propfirm.py (sequence_ev, n_copied_accounts)"
+  - id: apex_6
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: conservador
+    titulo: "Cap de contratos contra el tier mínimo"
+    texto: >-
+      Cap de contratos de la PA evaluado contra el tier MÍNIMO (cota conservadora): max_observed permite comparar
+      a mano contra tiers altos.
+    fuente: "src/risk/propfirm.py (contract_cap_diagnostic)"
+  - id: apex_7
+    ambito: {lente: [propfirm], modelo: [ladder], tipo: [futures]}
+    sesgo: optimista
+    titulo: "Plazo de activación no modelado"
+    texto: >-
+      Deadline de activación de 7 días no modelado: la PA siempre se activa al pasar.
+    fuente: "config/propfirms.yaml (activation)"
+  # --- Lente AXI -------------------------------------------------------------------------------------
+  - id: axi_regla_pase
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: neutral
+    titulo: "Cuándo se aprueba una etapa"
+    texto: >-
+      Una etapa se aprueba el primer día en que el beneficio alcanza el objetivo y ya llevas los trades mínimos. Los
+      días mínimos no bloquean: si solo faltan días, esperas sin operar (no hay riesgo) y la app te dice el día
+      estimado en que serías elegible.
+    en_esta_corrida: "En esta etapa: {min_trades} trades mínimos y {min_dias} días mínimos."
+    fuente: "poc_web/api/axi_path.py:10-17"
+  - id: axi_post_objetivo
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: conservador
+    titulo: "Objetivo alcanzado pero faltan trades"
+    texto: >-
+      Si llegas al objetivo y aún te faltan trades, la simulación sigue operando con el mismo riesgo hasta
+      completarlos, y puedes perder el objetivo por el camino. Un trader real podría reducir el riesgo en ese tramo;
+      la app todavía no lo modela.
+    fuente: "poc_web/api/axi_path.py:10-17; poc_web/api/main.py (policy_assumption)"
+  - id: axi_lote_minimo
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: neutral
+    titulo: "Lote mínimo"
+    texto: >-
+      Si el riesgo elegido da un lote menor que el mínimo del broker, el lote se sube al mínimo: el riesgo real de
+      esa operación es mayor que el elegido (la simulación ya usa ese lote mínimo, pero tu f no lo refleja). El
+      diagnóstico por pata muestra con qué frecuencia pasa.
+    fuente: "src/risk/mm.py (simulate_f, bloque «Bounds fieles al MQL5 de SQX»); src/risk/input_checks.py:125-137"
+  - id: axi_dias_calendario
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: neutral
+    titulo: "Días hasta aprobar"
+    texto: >-
+      Los días que muestra la app son una estimación de calendario: los días con posiciones de los bloques más los
+      huecos medios sin operar entre ellos. La cuenta empieza al inicio de tus datos, no el día real en que entras en
+      la etapa.
+    fuente: "poc_web/api/axi_path.py (days_cal); poc_web/api/main.py (meta.days_cal)"
+  - id: axi_puertas
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: optimista
+    titulo: "Puertas que la simulación no ve"
+    texto: >-
+      Hay condiciones de AXI que pueden bloquear el avance aunque la simulación diga que apruebas: Edge Score de 60 o
+      más para avanzar desde Seed, un mínimo de 1.000 $ en la cuenta antes de pulsar "Next Stage" y cerrar todas las
+      posiciones antes de avanzar.
+    fuente: "poc_web/web/src/components/LensResultsAxi.tsx (panel 'Puertas fuera del modelo')"
+  # --- Entrada en 4 bloques: receta para el EA, fichas de símbolo y flotante de los .sqx ---------------------------------
+  # guardrail entrada-4-bloques, fase F4 (2026-10-20), plan §2.8. Las tres notas salen en el catálogo (sin `en_esta_corrida`,
+  # como `lote_sobre_cuenta`) y `meta.recipe.notes` las cita por id: `receta_ea` y `fichas_broker` en las dos lentes,
+  # `axi_sqx_flotante` solo en la lente AXI. El ámbito no puede expresar «solo carteras .sqx» (las carteras CSV no llevan
+  # receta), así que cada texto lo dice en su primera frase. Ninguna nombra a una compañía (invariante AC5 de perfiles-v2: las
+  # ve cualquier perfil) ni usa markdown. Se añaden AL FINAL del fichero: las notas anteriores quedan byte a byte iguales.
+  # PLAN-DESVIO: el brief pide para `axi_sqx_flotante` un «sesgo pesimista o neutral, según el formato». El enumerado de sesgos
+  # no tiene «pesimista»; su equivalente es `conservador` (la dirección de dos de las tres cosas que dice la nota: la cota
+  # diaria por el MAE y el valle neto de costes, ambos más duros que el minuto y que el valle bruto del CSV).
+  - id: receta_ea
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "Receta para configurar tu EA"
+    texto: >-
+      Con carteras de .sqx, la app dimensiona cada orden con riesgo fijo: arriesga una cantidad en dólares hasta el stop inicial
+      de la orden. Para que tu EA haga lo mismo, configura su gestión de capital como FixedAmount con los valores de la receta
+      (RiskedMoney, Decimals, LotsIfNoMM y MaxLots, con el paso de lote en mmStep y el multiplicador en 1). El MM se configura
+      en el EA que despliegas (FixedAmount con estos valores); no hace falta cambiar el MM del backtest ni volver a minar.
+      LotsIfNoMM igual al lote mínimo es la condición para
+      que el EA haga lo simulado: cuando el lote calculado redondea a cero, el EA abre LotsIfNoMM, y con el valor por defecto de
+      SQX (1,0) abriría un lote entero; también cubre las órdenes sin stop, que abrirían al mínimo y sin protección. MaxLots es
+      el mayor lote que la simulación usa a esa f, así que nunca recorta nada de lo simulado. Si cambias la f, genera la receta
+      de nuevo: RiskedMoney y MaxLots dependen de ella. Las órdenes abiertas a la vez suman su riesgo: la simulación lo cuenta,
+      la receta no lo limita. Confirma en MT5 que tu cuenta está en USD antes de teclear RiskedMoney: si no, la receta no vale
+      (la v1 solo admite USD).
+    fuente: "poc_web/api/main.py (_sqx_recipe, _recipe_notes); src/risk/futures_legs.py (fixed_risk_micros); entrada-4-bloques-plan.md §2.8 y Enmiendas v2 E3, E12, E14, E18"
+  - id: fichas_broker
+    ambito: {lente: [propfirm, axi], modelo: ["*"], tipo: ["*"]}
+    sesgo: neutral
+    titulo: "De dónde salen las especificaciones de cada símbolo"
+    texto: >-
+      Con carteras de .sqx, las especificaciones de cada símbolo (valor del punto, pasos y mínimo de lote, comisión y spread)
+      salen de la ficha del símbolo en su bróker, no del .sqx: el .sqx solo propone valores y los deja marcados como sin
+      verificar hasta que los confirmas. Cada ficha pertenece a un bróker y cada perfil de firma opera con el suyo: una cartera
+      tiene que ser de un solo bróker y un perfil de otro bróker la rechaza, porque los precios, la hora del servidor y las
+      comisiones del backtest serían los de otro. Si quieres usar esas estrategias con ese perfil, vuelve a testearlas en SQX
+      con los datos de ese bróker.
+    fuente: "poc_web/api/symbols.py (fichas por bróker); poc_web/api/main.py (_profile_broker_problem); entrada-4-bloques-plan.md §2.1 y §2.5"
+  - id: axi_sqx_flotante
+    ambito: {lente: [axi], modelo: ["*"], tipo: [cfd]}
+    sesgo: conservador
+    titulo: "Flotante de tus .sqx en la lente AXI"
+    texto: >-
+      Con carteras de .sqx, el flotante de cada día sale de los precios de 1 minuto de tu bróker, con el spread del propio
+      backtest (el que usó SQX para llenar tus órdenes) y no con el spread típico de la ficha. Las operaciones sin barras de
+      1 minuto se acotan día a día con su peor flotante (MAE): es una cota diaria, más pesimista que el minuto, porque cuenta
+      el peor estado de la operación en cada día que abarca. El peor momento del día va neto de comisión y de swap, más
+      conservador que el de las carteras CSV, que va bruto.
+    fuente: "poc_web/api/main.py (_axi_sqx_strats, _daily_valley, _sqx_backtest_spread); entrada-4-bloques-plan.md §2.7 y Enmiendas v2 E1, E19, E20, E21"

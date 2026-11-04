@@ -1,0 +1,107 @@
+# Costes de trading de futuros CME en cuentas FTMO Futures (Pro/Growth).
+# Adjudicado 2026-10-03 cruzando dos revisiones web independientes (Gemini +
+# GLM 5.3 flash, `docs/referencia/revision_comisiones_futuros.md`): los números de exchange
+# vienen de fuente primaria CME (fee schedule efectivo 1-abr-2026, SER-9676
+# vía filing CFTC; SER-9799 efectivo 1-oct-2026 confirma que micros de
+# índices/FX/metales NO cambian).
+#
+# Estructura del coste total por contrato (FAQ FTMO "Which instruments"):
+#   total = exchange+clearing (CME) + NFA assessment + comisión FTMO
+# Comisión FTMO (verificada FAQ 2026-10-01): $0.20/lado micro, $0.50/lado mini.
+#
+# NFA assessment: $0.01/lado VIGENTE (era $0.02 hasta 30-jun-2026; vuelve a
+# $0.02 el 1-jul-2027 — si un backtest cruza esa frontera, +$0.02 RT).
+#
+# Tier aplicable: Non-Member Globex outright (retail vía FCM de FTMO; los
+# descuentos por volumen del schedule son para miembros/clearing firms).
+#
+# Uso previsto: parámetro de coste en builds SQX de futuros (símbolos
+# @micro_*) y calibración MC_ER por símbolo. Ningún módulo lo consume aún
+# (al 2026-10-03); el audit fail-closed de sqx_* sigue sin claves para estos
+# símbolos (spread/slippage MC pendientes de calibrar con datos reales).
+#
+# NOTA de modelado: la comisión es coste CIERTO → meter exacta, sin buffer;
+# el slippage se modela aparte (estrés MC), no inflando esta cifra.
+
+symbols:
+  MNQ:    # Micro E-mini Nasdaq-100 — SQX: @micro_nasdaq
+    sqx_symbol: "@micro_nasdaq"
+    exchange_clearing_per_side: 0.35   # VERIFICADA primaria (CME fee schedule 1-abr-2026)
+    nfa_per_side: 0.01
+    ftmo_per_side: 0.20
+    total_per_side: 0.56
+    total_round_trip: 1.12
+    tick_size: 0.25
+    tick_value_usd: 0.50
+    rt_in_ticks: 2.24
+  M2K:    # Micro E-mini Russell 2000 — SQX: @micro_rusell
+    sqx_symbol: "@micro_rusell"
+    exchange_clearing_per_side: 0.35   # VERIFICADA primaria
+    nfa_per_side: 0.01
+    ftmo_per_side: 0.20
+    total_per_side: 0.56
+    total_round_trip: 1.12
+    tick_size: 0.10
+    tick_value_usd: 0.50
+    rt_in_ticks: 2.24
+  MGC:    # Micro Gold (COMEX) — SQX: @micro_oro
+    sqx_symbol: "@micro_oro"
+    exchange_clearing_per_side: 0.70   # VERIFICADA primaria SER-9676 (0.60→0.70 el 1-abr-2026;
+                                       # Cannon $0.50 desactualizado, TradeStation $1.10 descartado)
+    nfa_per_side: 0.01
+    ftmo_per_side: 0.20
+    total_per_side: 0.91
+    total_round_trip: 1.82
+    tick_size: 0.10
+    tick_value_usd: 1.00
+    rt_in_ticks: 1.82
+  M6E:    # Micro EUR/USD — SQX: @micro_eurusd
+    sqx_symbol: "@micro_eurusd"
+    exchange_clearing_per_side: 0.24   # VERIFICADA primaria 2026-10-03: CME "Foreign Exchange
+                                       # Product Fee Schedules as of April 1, 2026", columna
+                                       # E-micro FX, fila Non-Members, Globex = $0.24
+    nfa_per_side: 0.01
+    ftmo_per_side: 0.20
+    total_per_side: 0.45
+    total_round_trip: 0.90
+    tick_size: 0.0001
+    tick_value_usd: 1.25
+    rt_in_ticks: 0.72
+
+# Política SQX por símbolo (spread/slippage para HP crosscheck y MC_ER), en
+# unidades de precio. ESTIMADA 2026-10-03 con criterio "micros hiperlíquidos":
+# base = 1 tick (spread típico RTH), peor caso 2-3 ticks (news/open/overnight
+# Globex), slippage MC 0-2 ticks. NO medida de datos de mercado: los datos SQ
+# Ultimate no traen spread. Re-calibrar con el journal de la cuenta real
+# cuando exista (misma filosofía que el cross-check C5 de régimen-ATR).
+# M2K/MGC llevan peor caso 3 ticks (libro más fino en open/datos macro);
+# slippage MC hasta 2 ticks. Clave = símbolo SQX tal cual aparece en el .cfx.
+sqx_policy:
+  "@micro_nasdaq":   # MNQ, tick 0.25
+    typical_spread_points: 0.25
+    sqx_hp_spread_points: 0.25
+    sqx_mc_spread_range: [0.25, 0.50]
+    sqx_mc_slippage_range: [0.0, 0.25]
+  "@micro_rusell":   # M2K, tick 0.10
+    typical_spread_points: 0.10
+    sqx_hp_spread_points: 0.10
+    sqx_mc_spread_range: [0.10, 0.30]
+    sqx_mc_slippage_range: [0.0, 0.20]
+  "@micro_oro":      # MGC, tick 0.10
+    typical_spread_points: 0.10
+    sqx_hp_spread_points: 0.10
+    sqx_mc_spread_range: [0.10, 0.30]
+    sqx_mc_slippage_range: [0.0, 0.20]
+  "@micro_eurusd":   # M6E, tick 0.0001
+    typical_spread_points: 0.0001
+    sqx_hp_spread_points: 0.0001
+    sqx_mc_spread_range: [0.0001, 0.0002]
+    sqx_mc_slippage_range: [0.0, 0.0001]
+
+sources:
+  - "CME SER-9676 (fees 1-abr-2026, tabla COMEX micro metals MGC) — cftc.gov filing"
+  - "CME SER-9799 (fees 1-oct-2026; micros índices/FX/metales sin cambios) — cmegroup.com"
+  - "CME Fee Schedule Equity Products as of 2026-04-01 — cmegroup.com"
+  - "NFA Assessment Fees FAQ ($0.01/lado vigente, cronograma por año fiscal) — nfa.futures.org"
+  - "FTMO Futures FAQ 'Which instruments' (estructura de coste + comisión $0.20 micro) — ftmo.com, 2026-10-01"
+  - "Secundarias concordantes: TradeStation, Cannon Trading, IBKR"
